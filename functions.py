@@ -721,3 +721,7 @@ def cluster_handle_lib():
     visualizer.show()
 
     gap_stat_normal(data,15)
+
+def handle_q_2():
+    cluster_handle_scratch()
+    cluster_handle_lib()
