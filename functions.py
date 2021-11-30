@@ -357,7 +357,7 @@ def handle_q_1():
     data_folder_query = Path(path + "/query/")
     query_tracks = data_folder_query.glob("*.wav")
     query_list = collect_query(query_tracks)
-    titles_tracks, peaks_freq = get_tracks_informations(tracks_list)
+    titles_tracks, peaks_freq = get_tracks_informations(tracks_list, DURATION, HOP_SIZE)
     save_peaks_freq(peaks_freq)
     save_titles_tracks(titles_tracks)
     matching_dict = get_matches(DURATION, HOP_SIZE, titles_tracks,peaks_freq, query_list, r = 4)
