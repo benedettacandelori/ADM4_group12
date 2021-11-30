@@ -112,54 +112,45 @@ def audio_signals(HOP_SIZE, DURATION, tracks):
         track, sr, onset_env, peaks = load_audio_picks(audio, DURATION, HOP_SIZE)
         plot_spectrogram_and_picks(track, sr, peaks, onset_env)
 
-def save_json_utils(peaks_freq, peaks_time, titles_tracks):
-    with open(path+'/peaks_freq.json', 'w') as f:
-        json.dump(peaks_freq, f)
-    with open(path+'/peaks_time.json', 'w') as f:
-        json.dump(peaks_time, f)
-    with open(path+'/titles_tracks.json', 'w') as f:
-        json.dump(titles_tracks, f)
+def collect_query(query_tracks):
+    query_list= []
+    for q in query_tracks:
+        query_list.append(str(q))
+    return query_list
 
-def create_datasets(tracks, HOP_SIZE, DURATION):
-    tracks_list = []
-    for i in tracks:
-        tracks_list.append(str(i))
-    titles_tracks  = []
-    peaks_time = []
-    peaks_freq = []
-    for audio in tqdm(tracks_list):
-        # find the titles of the songs
-        titles_tracks.append(re.search('\d+-(.+?).wav', audio).group(1).replace('_',' '))
-        # use the (given) function to get the peacks and their frequencies
-        _, _, onset_env, peaks = load_audio_picks(audio, DURATION, HOP_SIZE) 
-        peaks_time.append(list(map(int,peaks)))
-        f = [ '%.3f' % elem for elem in onset_env[peaks]]
-        peaks_freq.append(list(map(float,f)))
-    save_json_utils(peaks_time, peaks_freq, titles_tracks)
+def get_tracks_informations(tracks,DURATION, HOP_SIZE):
 
-    return tracks_list
+  ''' This function return title, peaks frequencies of all songs in our dataset'''
+  
+  titles_tracks  = []
+  peaks_freq = []
+  for audio in tqdm(tracks):
+    # find the titles of the songs
+    titles_tracks.append(re.search('\d+-(.+?).wav', audio).group(1).replace('_',' '))
+    # use the (given) function to get the peacks and their frequencies
+    _, _, onset_env, peaks = load_audio_picks(audio, DURATION, HOP_SIZE) 
+    f = [ '%.1f' % elem for elem in onset_env[peaks]]
+    peaks_freq.append(list(map(float,f)))
+  return titles_tracks, peaks_freq
 
 def load_json_list(path, file_output_name):
 
   ''' This function allows to load and read correctly a .json file which 
-  containa a list of lists from a specific path. '''
+  contains a list of lists from a specific path. '''
 
   f = open(path)
-  load = json.load(f)
-  for i in load:
-    file_output_name.append(i)
-  return(file_output_name)
+  file_output_name = json.load(f)
+  return file_output_name
 
-def load_utils():
-    peaks_freq = []
-    peaks_time = []
-    titles_tracks = []
+def load_json_dict(path, file_output_name):
 
-    peaks_freq = load_json_list(path+'/peaks_freq.json', peaks_freq)
-    peaks_time = load_json_list(path+'/peaks_time.json', peaks_time)
-    titles_tracks = load_json_list(path+'/titles_tracks.json',titles_tracks)
+  ''' This function allows to load and read correctly a .json file which 
+  contains a dictionary from a specific path. '''
 
-    return peaks_freq, peaks_time, titles_tracks
+  with open(path) as json_file:
+    file_output_name = json.load(json_file)
+
+  return file_output_name
 
 def create_shingles(peaks_freqencies):
 
@@ -167,24 +158,21 @@ def create_shingles(peaks_freqencies):
   called shingles. The input peaks_freqencies must be a list of lists. '''
 
   # define an empty array to append shingles 
-  shingles = []
+  shingles = set()
   # collect all the 'peak frequence' that appear in the input array
   for sublist in peaks_freqencies:
       for item in sublist:
-        shingles.append(item)
-  # drop duplicates
-  shingles = list(dict.fromkeys(shingles))
-  shingles = np.round(shingles,3)
-  return(shingles)
+        shingles.add(round(item,1))
 
-def create_characteristic_matrix(peaks_freqencies):
+  return np.array(list(shingles))
+
+def create_characteristic_matrix(peaks_freqencies, shingles):
   
   '''This function creates a matrix C that has all shingles values as rows and 
   all different songs as columns. Its generic value C_ij is equal to one if the j-th
   song has the i-th 'peak frequency' among its 'peaks frequencies' and 0 otherwise.
   The input peaks_freqencies must be a list of lists'''
   
-  shingles = create_shingles(peaks_freqencies)
 
   # set the shape of the output matrix
   n = len(shingles)   # number of rows
@@ -195,10 +183,10 @@ def create_characteristic_matrix(peaks_freqencies):
   for i in range(n):
     for j in range(m):
       # set '1' if the j-th song has the i-th 'peak frequency' among its 'peaks frequencies' 
-      if shingles[i] in peaks_freqencies[j]:
+      if shingles[i] in np.array(peaks_freqencies[j]).round(1):
         characteristic_matrix[i][j] = 1
-  return(characteristic_matrix)
-
+  
+  return np.array(characteristic_matrix)
 
 def update_signature_matrix(characteristic_matrix):
 
@@ -218,47 +206,51 @@ def update_signature_matrix(characteristic_matrix):
         break
   return perm_row
 
+def get_perm(M):
 
-def signature_matrix(peaks_freqencies):
+  ''' This function returns a permutation of a list with values from 0 to M'''
+  
+  result = np.arange(M)
+  return np.random.permutation(result)
+
+def signature_matrix(peaks_freqencies, shingles):
   
   ''' This function returns the signature matrix taking in input only the peaks' frequencies.
   It calls the function 'create_characteristic_matrix' to compute characteristic matrix'''
 
-  characteristic_matrix = create_characteristic_matrix(peaks_freqencies)
+  characteristic_matrix = create_characteristic_matrix(peaks_freqencies, shingles)
 
   signature_matrix = []
-  # set 100 as the number of purmutation --> number of rows of the signature matrix
-  for i in range(100):
-    # permute rows of the characteristic_matrix
-    perm_mat = np.random.permutation(characteristic_matrix)
+  list_permutation = [] # list to memorize index-permutations 
+
+  # set 20 as the number of purmutation --> number of rows of the signature matrix
+  for i in range(20):
+    # get permuted rows' indexes
+    permutation = get_perm(len(characteristic_matrix))
+    list_permutation.append(permutation)
+    
+    # create the permuted characteristic matrix
+    perm_mat = characteristic_matrix[permutation,:]
+    
     # create the row of the signature matrix
     perm_row = update_signature_matrix(perm_mat)
     # fill the matrix
     signature_matrix.append(perm_row)
   
-  return signature_matrix
+  return signature_matrix, list_permutation 
 
-def save_signature_matrix(signature):
-    with open(path+'/signature_matrix.json', 'w') as f:
-        json.dump(signature, f)
-
-def load_signature_matrix():
-    signature_mat = []
-    signature_mat = load_json_list(path+'/signature_matrix.json', signature_mat)
-    return signature_mat
-
-def define_buckets(signature_matrix, r = 2):
+def define_buckets(signature_matrix, r = 4):
   ''' This function takes in input a signature matrix of shape (n_permutations, n_songs)
   and returns a dictionary which has as key a 'hash' value and as values all the songs that contain that 'hash'
-  Specifically we set (default) r = 2 that means that we are going to split the matrix in 25 
-  bands that contain 2 rows each (b = 50, r = 2). '''
+  Specifically we set (default) r = 2 that means that we are going to split the matrix in 5 
+  bands that contain 4 rows each (b = 5, r = 4). '''
   
   # create an empty dictionary
   buckets = dict()
   for col_idx, col in enumerate(np.transpose(signature_matrix)):
-    # each bucket has 2 row (r = 2). Thus 
+    # each bucket has 4 row (r = 4). Thus 
     for i in range(0, len(col), r):
-      hash = tuple(col[i:i+2])
+      hash = tuple(col[i:i+r])
       # fill the dictionary
       if hash in buckets:
         buckets[hash].add(str(col_idx))
@@ -266,87 +258,90 @@ def define_buckets(signature_matrix, r = 2):
         buckets[hash] = {str(col_idx)}
   return(buckets)
 
-def collect_query(query_tracks):
-    queries = []
-    for id, q in enumerate(query_tracks):
-        queries.append(q)
-    return queries
+def get_matches(DURATION, HOP_SIZE, titles_tracks, peaks_freq, queries, r = 4):
 
-def extract_info(queries, DURATION, HOP_SIZE):
-    # Get some useful informations from the query
-    titles_query  = []
-    peaks_time_query = []
-    peaks_freq_query = []
-    for q in tqdm(queries):
-        # find the 'title' of the query
-        titles_query.append(str(q).split('/')[-1].split('.')[0])
-        
-        # use the (given) function to get the peacks and their frequencies
-        _, _, onset_env_query, peaks_query = load_audio_picks(q, DURATION, HOP_SIZE) 
-            
-        peaks_time_query.append(list(map(int,peaks_query)))
-        f = [ '%.3f' % elem for elem in onset_env_query[peaks_query]]
-        peaks_freq_query.append(list(map(float,f)))
+  ''' This function takes in input the queries (array), an array of songs' titles and a list of songs' peak-frequencies. 
+  It computes the signature matrix for the tracks and creates a dictionary which map for each bucket a list of song 
+  (that are mapped in that bucket) - from the signature matrix. 
+  Then each query is compared only with the songs that are mapped in the same buckets of the query. The 'best match' of a query is
+  the song that compares  with the major frequency among them.'''
+
+  # call previous functions to get all objects to compute matching
+  
+  # IMPORTANTE NON RIESCO A 'INSCATOLARE QUESTA PRIMA' , prima mi ha dato dei problemi anche se non ho capito quali..
+  # l ho richiamata fuori e ci mette un po 
+  #titles_tracks, peaks_freq = get_tracks_informations(tracks)
+  
+  shingles = create_shingles(peaks_freq)
+  signature_mat, permutations = signature_matrix(peaks_freq, shingles)
+  print(len(signature_mat), len(signature_mat[0]), len(permutations))
+  bucket_dict = define_buckets(signature_mat, r)
+  
+  matching_dict = dict()
+  titles_query = []
+
+  for query in queries:
+
+    # find the 'title' of the query
+    title_query = str(query).split('/')[-1].split('.')[0]
+    _, _, onset_env_query, peaks_query = load_audio_picks(query, DURATION, HOP_SIZE) 
+    f = [ '%.1f' % elem for elem in onset_env_query[peaks_query]]
+    peaks_freq_query = [list(map(float,f))] 
+
+    bucket_query = []
+    characteristic_matrix_query = create_characteristic_matrix(peaks_freq_query,shingles)
     
-    return titles_query, peaks_time_query, peaks_freq_query
-
-def jaccard_similarity(list1, list2):
-
-  ''' This function computes the jaccard similarity between two lists (which are given as parameters)'''
-  s1 = set(list1)
-  s2 = set(list2)
-  return float(len(s1.intersection(s2)) / len(s1.union(s2)))
-
-def fingerprint_hashing(N_TRACKS, mp3_tracks, HOP_SIZE, DURATION, tracks):
-    # Start preprocessing & analysis of mp3 audio tracks
-    preprocessing_converter(N_TRACKS, mp3_tracks)
-    audio_signals(HOP_SIZE, DURATION, tracks)
-    # Create our workng data
-    tracks_list = create_datasets(tracks, HOP_SIZE, DURATION)
-    peaks_freq, peaks_time, titles_tracks = load_utils()
-    # Implement minhash (LSH)
-    sign_mat = signature_matrix(peaks_freq)
-    save_signature_matrix(sign_mat)
-    # sign_mat = load_signature_matrix() -> use this if you don't want to create it from scratch
-    bucket_dict = define_buckets(sign_mat)
-
-    return bucket_dict, tracks_list, peaks_freq, peaks_time, titles_tracks
-
-def matching(signature_query, bucket_dict, tracks_list, peaks_freq_query, peaks_freq, titles_tracks, titles_query):
-    dic = dict()
-    r = 2
-    all_matches = dict()
-    threshold = 0.6
-
-    for q in range(len(np.transpose(signature_query))):
-        #for q in range(9):
-        buckets = []
-        hash_query = np.transpose(signature_query)[q]
-        
-        # create a list of buckets to which that query has been mapped
-        for i in range(0, len(hash_query), r):
-            buckets.append(tuple(hash_query[i:i+r]))
-        
-        # serch the indexes of the songs' tracks that have been mapped in the same buckets of thet query
-        comparing_tracks_index = []
-        for b in buckets:
-            if b in bucket_dict.keys():
-                comparing_buckets = bucket_dict[b]
-                for track in comparing_buckets:
-                    comparing_tracks_index.append(track)
+    # Get the signature matrix (vector) for a single query with the 
+    # same permutations of the songs' signature matrix
+    for perm in permutations:
+      car_q = characteristic_matrix_query[perm]
+      bucket_query.append(update_signature_matrix(car_q))
     
-    # 
+    # covert bucket_query (list of lists) into array
+    b = np.matrix(bucket_query)
+    bucket_query = list(np.array(b).reshape(-1,))
+    
+    # create a set of buckets to which that query has been mapped
+    buckets = set()
+    for i in range(0, len(bucket_query), r):
+      buckets.add(tuple(bucket_query[i:i+r]))
+    
+    # serch the indexes of the songs' tracks that have been mapped in the same buckets of thet query
+    comparing_tracks_index = []
+    for b in buckets:
+      if b in bucket_dict:
+        comparing_buckets = bucket_dict[b]
+        for track in comparing_buckets:
+          comparing_tracks_index.append(track)
+
+    # compute the frequencies of the songs that are mapped in the same buckets of the query
     matching_tracks = []
     scores = []
-    for t in range(len(tracks_list)):
-        if str(t) in comparing_tracks_index:
-            jaccard = jaccard_similarity(peaks_freq_query[q], peaks_freq[t])
-            if(jaccard >= 0):
-                scores.append(jaccard)
-                matching_tracks.append((jaccard, titles_tracks[t]))
+    unique, counts = np.unique(comparing_tracks_index, return_counts=True)
+    frequecy_song = dict(zip(unique, counts))
     
-    # complete our dictionary
-    dic[titles_query[q]] = max(matching_tracks)
+    matching = max(frequecy_song, key=frequecy_song.get)
+    matching_dict[title_query] = titles_tracks[int(matching)]
+
+  return matching_dict
+
+def get_tracks_list(tracks):
+    tracks_list = []
+    for i in tracks:
+        tracks_list.append(str(i))
+    return tracks_list
+
+def save_peaks_freq(peaks_freq):
+    with open(path+'/peaks_freq.json', 'w') as f:
+        json.dump(peaks_freq, f)  
+
+def save_titles_tracks(titles_tracks):
+    with open(path+'/titles_tracks.json', 'w') as f:
+        json.dump(titles_tracks, f)  
+
+def save_matching_dict(matching_dict):
+    with open(path+'/matching_dict.json', 'w') as f:
+        json.dump(matching_dict, f)
 
 def handle_q_1():
     N_TRACKS = 1413
@@ -356,14 +351,21 @@ def handle_q_1():
     data_folder = Path(path + "/mp3s-32k/")
     mp3_tracks = data_folder.glob("*/*/*.mp3")
     tracks = data_folder.glob("*/*/*.wav")
+    preprocessing_converter(N_TRACKS, mp3_tracks)
+    audio_signals(HOP_SIZE, DURATION, tracks)
+    tracks_list = get_tracks_list(tracks)
     data_folder_query = Path(path + "/query/")
     query_tracks = data_folder_query.glob("*.wav")
-    # We start loading our queries
-    queries = collect_query(query_tracks)
-    titles_query, peaks_time_query, peaks_freq_query = extract_info(queries, DURATION, HOP_SIZE)
-    bucket_dict, tracks_list, peaks_freq, peaks_time, titles_tracks = fingerprint_hashing(N_TRACKS, mp3_tracks, HOP_SIZE, DURATION, tracks)
-    signature_query = signature_matrix(peaks_freq_query)
-    matching(signature_query, bucket_dict, tracks_list, peaks_freq_query, peaks_freq, titles_tracks, titles_query)
+    query_list = collect_query(query_tracks)
+    titles_tracks, peaks_freq = get_tracks_informations(tracks_list)
+    save_peaks_freq(peaks_freq)
+    save_titles_tracks(titles_tracks)
+    matching_dict = get_matches(DURATION, HOP_SIZE, titles_tracks,peaks_freq, query_list, r = 4)
+    save_matching_dict(matching_dict)
+    matches = dict()    
+    matches = load_json_dict(path+'/matching_dict.json', matches)
+    return matches
+
 
 ############### QUESTION 2 ###############
 
