@@ -6,10 +6,10 @@ Algorithmic Methods of Data Mining course at the Data Science Master's Degree in
 This repository contains 3 files: 
 > `main.ipynb` 
 > This is a python notebook which contains our solutions to the exercises of the homework.
-> 
 > **IMPORTANT** 
 > The output of the exercise 1 (*Implement your own Shazam*) should be:
-> ![alt text](https://github.com/adam-p/markdown-here/raw/master/src/common/images/icon48.png "Logo Title Text 1")
+> 
+> ![alt text](output.png)
 
 
 
