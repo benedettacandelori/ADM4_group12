@@ -27,9 +27,12 @@ import subprocess
 import math
 from sklearn.decomposition import PCA
 import sys
+import plotly.graph_objects as go
 import traceback
+import itertools
+from sklearn import metrics
 
-path = ''
+path = '/content/drive/MyDrive/HomeworkIV'
 
 ############### QUESTION 1 ###############
 
@@ -118,7 +121,7 @@ def collect_query(query_tracks):
         query_list.append(str(q))
     return query_list
 
-def get_tracks_informations(tracks,DURATION, HOP_SIZE):
+def get_tracks_informations(tracks, DURATION, HOP_SIZE):
 
   ''' This function return title, peaks frequencies of all songs in our dataset'''
   
@@ -268,13 +271,10 @@ def get_matches(DURATION, HOP_SIZE, titles_tracks, peaks_freq, queries, r = 4):
 
   # call previous functions to get all objects to compute matching
   
-  # IMPORTANTE NON RIESCO A 'INSCATOLARE QUESTA PRIMA' , prima mi ha dato dei problemi anche se non ho capito quali..
-  # l ho richiamata fuori e ci mette un po 
   #titles_tracks, peaks_freq = get_tracks_informations(tracks)
   
   shingles = create_shingles(peaks_freq)
   signature_mat, permutations = signature_matrix(peaks_freq, shingles)
-  print(len(signature_mat), len(signature_mat[0]), len(permutations))
   bucket_dict = define_buckets(signature_mat, r)
   
   matching_dict = dict()
@@ -343,6 +343,28 @@ def save_matching_dict(matching_dict):
     with open(path+'/matching_dict.json', 'w') as f:
         json.dump(matching_dict, f)
 
+def print_matching(input_track, matches_dict):
+
+  track = list(matches_dict.keys())[int(input_track)-1]
+
+  fig = go.Figure(data=[go.Table(
+      columnwidth = 80,
+      header=dict(values=['MATCHING SONG'],
+                  line_color='silver',
+                  fill_color='silver',
+                  align='center',
+                  font=dict(color='snow', size=12),
+                  height=30),
+      cells=dict(values=['<b>{}<b>'.format(matches_dict[track])],
+                line_color='white',
+                fill =  dict(color='dodgerblue'),
+                font=dict(color='snow', size=24),
+                height=50)
+
+                      )])
+  fig.update_layout(width=1000, height=300)
+  fig.show()
+
 def handle_q_1():
     N_TRACKS = 1413
     HOP_SIZE = 512
@@ -352,7 +374,6 @@ def handle_q_1():
     mp3_tracks = data_folder.glob("*/*/*.mp3")
     tracks = data_folder.glob("*/*/*.wav")
     preprocessing_converter(N_TRACKS, mp3_tracks)
-    audio_signals(HOP_SIZE, DURATION, tracks)
     tracks_list = get_tracks_list(tracks)
     data_folder_query = Path(path + "/query/")
     query_tracks = data_folder_query.glob("*.wav")
@@ -369,21 +390,6 @@ def handle_q_1():
 
 ############### QUESTION 2 ###############
 
-def load_ds_get_prev():
-    echonest = pd.DataFrame(pd.read_csv(path+"/dataset_csv/echonest.csv", sep = ','))
-    echonest.head()
-    echonest.info()
-
-    features = pd.DataFrame(pd.read_csv(path+"/dataset_csv/features.csv", sep = ','))
-    features.head()
-    features.info()
-
-    tracks =  pd.DataFrame(pd.read_csv(path + "/dataset_csv/tracks.csv", sep = ','))
-    tracks.head()
-    tracks.info()
-
-    return echonest, features, tracks
-
 def remove_NaN_values(dataset):
   ''' Given a dataset, this function fills NaN values with 0 '''
   for col in dataset.columns:
@@ -391,7 +397,7 @@ def remove_NaN_values(dataset):
             if is_numeric_dtype(dataset[col]) == True: #case of numeric column
                 dataset[col] = dataset[col].fillna(dataset[col].mean())
             elif is_string_dtype(dataset[col]) == True: # case of string column
-                dataset[col] = dataset[col] .fillna("") 
+                dataset[col] = dataset[col] .fillna("")  
 
 def remove_object_col(dataset):
     ''' This function removes object type columns from the given dataset and returns a cleaned one '''
@@ -415,181 +421,12 @@ def number_of_components(pca, ratio = 0.755):
   n = len([np.cumsum(pca.explained_variance_ratio_)[i]  for i in range(n_components) if np.cumsum(pca.explained_variance_ratio_)[i] <= ratio])
   return(n)
 
-def provide_data():
-    # Obtain datasets
-    echonest, features, tracks = load_ds_get_prev()
-    # Remove NaN values
-    remove_NaN_values(echonest)
-    remove_NaN_values(features)
-    remove_NaN_values(tracks)
-    # Clean columns
-    echonest_cleaned = remove_object_col(echonest)
-    features_cleaned = remove_object_col(features)
-    tracks_cleaned = remove_object_col(tracks)
-    # Show new infos
-    echonest_cleaned.info()
-    features_cleaned.info()
-    tracks_cleaned.info()
-    # Finalize our data to start working on
-    echonest_final = scaling_features(echonest_cleaned)
-    features_final = scaling_features(features_cleaned)
-    tracks_final = scaling_features(tracks_cleaned)
-
-    return echonest, features, tracks, echonest_final, features_final, tracks_final
-
-def PCA_echo(echonest, echonest_final):
-    # Set number of components equal to the min(n_sample, n_features)
-    pca_echonest = PCA(n_components = echonest_final.shape[1]-1)
-    # we need to exclude as always the trak_id column (the first one)
-    echonest_fit = pca_echonest.fit_transform(echonest_final[echonest_final.columns[1:]])
-    # let's choose the number of components
-    n_components_echonest = number_of_components(pca_echonest)
-    print('We select {} components.'.format(n_components_echonest))
-    ratio = round(np.cumsum(pca_echonest.explained_variance_ratio_)[n_components_echonest],3)
-    print('The ratio of variance explained by {} components is equal to {}.'.format(n_components_echonest, ratio))
-    
-    plt.figure(figsize = (25,8))
-    plt.subplot(121) 
-
-    plt.plot(pca_echonest.explained_variance_ratio_, lw = 4, color = 'cornflowerblue')
-    plt.ylabel('Explained Variance')
-    plt.xlabel('Components')
-
-    plt.subplot(122) 
-    plt.plot(np.cumsum(pca_echonest.explained_variance_ratio_), lw = 4, color = 'cornflowerblue')
-    plt.plot( [n_components_echonest, n_components_echonest],[0.1, np.cumsum(pca_echonest.explained_variance_ratio_)[n_components_echonest] ], 'k--', lw=3, alpha = .4)
-    plt.plot( [0, n_components_echonest],[np.cumsum(pca_echonest.explained_variance_ratio_)[n_components_echonest], np.cumsum(pca_echonest.explained_variance_ratio_)[n_components_echonest]  ], 'k--',lw=3, alpha = .4)
-    plt.plot(n_components_echonest, np.cumsum(pca_echonest.explained_variance_ratio_)[n_components_echonest], marker="o", markersize=14, markerfacecolor="firebrick")
-    plt.ylabel('Cumulative Explained Variance')
-    plt.xlabel('Components')
-    plt.show()
-
-    # Get the reduced dataframe of echonest
-    echonest_pca = pd.DataFrame(echonest_fit).iloc[: , :n_components_echonest+1]
-    echonest_pca.head()
-
-    # Add the track_id column 
-    echonest_pca = pd.concat([echonest['track_id'], echonest_pca], axis = 1)
-    echonest_pca.head()
-
-    return echonest_pca
-
-def PCA_feat(features, features_final):
-    # Set number of components equal to the min(n_sample, n_features)
-    pca_features = PCA(features_final.shape[1]-1)
-    # we need to exclude as always the trak_id column (the first one)
-    features_fit = pca_features.fit_transform(features_final[features_final.columns[1:]])
-    # let's choose the number of components
-    n_components_features = number_of_components(pca_features)
-    print('We select {} components.'.format(n_components_features))
-    ratio = round(np.cumsum(pca_features.explained_variance_ratio_)[n_components_features],3)
-    print('The ratio of variance explained by {} components is equal to {}.'.format(n_components_features, ratio))
-    
-    plt.figure(figsize = (25,8))
-    plt.subplot(121) 
-
-    plt.plot(pca_features.explained_variance_ratio_, lw = 4, color = 'cornflowerblue')
-    plt.ylabel('Explained Variance')
-    plt.xlabel('Components')
-
-    plt.subplot(122)
-    plt.plot(np.cumsum(pca_features.explained_variance_ratio_), lw = 4 ,color = 'cornflowerblue')
-    plt.plot( [n_components_features, n_components_features],[0.1, np.cumsum(pca_features.explained_variance_ratio_)[n_components_features] ], 'k--', lw=3, alpha = .4)
-    plt.plot( [0, n_components_features],[np.cumsum(pca_features.explained_variance_ratio_)[n_components_features], np.cumsum(pca_features.explained_variance_ratio_)[n_components_features]  ], 'k--', lw=3 , alpha = .4)
-    plt.plot(n_components_features, np.cumsum(pca_features.explained_variance_ratio_)[n_components_features], marker="o", markersize=14, markerfacecolor="firebrick")
-    plt.ylabel('Cumulative Explained Variance')
-    plt.xlabel('Components')
-    plt.show()
-
-    # Get the reduced dataframe of features
-    features_pca = pd.DataFrame(features_fit).iloc[: , :n_components_features+1]
-    features_pca.head()
-
-    # Add the track_id column 
-    features_pca = pd.concat([features['track_id'], features_pca], axis = 1)
-    features_pca.head()
-
-    return features_pca
-
-def PCA_tracks(tracks, tracks_final):
-    # Set number of components equal to the min(n_sample, n_features)
-    pca_tracks = PCA(n_components=tracks_final.shape[1]-1)
-    # we need to exclude as always the trak_id column (the first one)
-    tracks_fit = pca_tracks.fit_transform(tracks_final[tracks_final.columns[1:]])
-    # let's choose the number of components
-    n_components_tracks = number_of_components(pca_tracks)
-    print('We select {} components.'.format(n_components_tracks))
-    ratio = round(np.cumsum(pca_tracks.explained_variance_ratio_)[n_components_tracks],3)
-    print('The ratio of variance explained by {} components is equal to {}.'.format(n_components_tracks, ratio))
-
-    plt.figure(figsize = (25,8))
-    plt.subplot(121) 
-
-    plt.plot(pca_tracks.explained_variance_ratio_, lw = 4, color = 'cornflowerblue')
-    plt.ylabel('Explained Variance')
-    plt.xlabel('Components')
-
-    plt.subplot(122)
-    plt.plot(np.cumsum(pca_tracks.explained_variance_ratio_), lw = 4, color = 'cornflowerblue' )
-    plt.plot( [n_components_tracks, n_components_tracks],[0.22, np.cumsum(pca_tracks.explained_variance_ratio_)[n_components_tracks] ], 'k--', lw=3, alpha = .4)
-    plt.plot( [0, n_components_tracks],[np.cumsum(pca_tracks.explained_variance_ratio_)[n_components_tracks], np.cumsum(pca_tracks.explained_variance_ratio_)[n_components_tracks]  ], 'k--', lw=3, alpha = .4)
-    plt.plot(n_components_tracks, np.cumsum(pca_tracks.explained_variance_ratio_)[n_components_tracks],marker="o", markersize=14, markerfacecolor="firebrick")
-    plt.ylabel('Cumulative Explained Variance')
-    plt.xlabel('Components')
-    plt.show()
-
-    # Get the reduced dataframe of tracks
-    tracks_pca = pd.DataFrame(tracks_fit).iloc[: , :n_components_tracks+1]
-    tracks_pca.head()
-
-    # Add the track_id column 
-    tracks_pca = pd.concat([tracks['track_id'], tracks_pca], axis = 1)
-    tracks_pca.head()
-
-    return tracks_pca
-
-def pca_all():
-    '''
-    In order to get a more complete final dataset, we need to select some meaningful variables from the tracks dataframe.
-
-    We chose the following variables to have a more detailed description of the tracks:
-
-    track_title
-    album_title
-    artist_name
-    track_duration
-    track_language_code
-    track_genre_top
-    track_license
-    '''
-    echonest, features, tracks, echonest_final, features_final, tracks_final = provide_data()
-    selected_variables_df = tracks[['track_id', 'track_title', 'album_title','artist_location', 'artist_name','track_duration', 'track_language_code', 'track_genre_top', 'track_license']]
-    selected_variables_df.head()
-    echonest_pca = PCA_echo(echonest, echonest_final)
-    features_pca = PCA_feat(features, features_final)
-    tracks_pca = PCA_tracks(tracks, tracks_final)
-
-    '''
-    Now we can merge all together the three reduced dataframe obtained from the PCA and the dataframe with the selected variables.
-
-    The new dataframe contains only 125 features!
-    '''
-    merge_1 = selected_variables_df.merge(echonest_pca, on = "track_id")
-    merge_2 = merge_1.merge(features_pca, on = "track_id")
-    merged_df = merge_2.merge(tracks_pca, on = "track_id")
-
-    print(merged_df.shape)
-    merged_df.head()
-    
-    # Save our new dataset
-    merged_df.to_csv(path+'/dataset_final.csv')
-
-    return merged_df
-
 def kmeans_scratch(k, ds):
     '''We pass the k number of clusters and a dataset ds, the function will return the k-means from scratch'''
-    
-    values = np.array(ds).reshape(ds.shape[0], ds.shape[1]) # Creating a values array with the values inside ds
+    if isinstance(ds, pd.DataFrame):
+      values = ds.values # Creating a values array with the values inside ds
+    else:
+      values = ds
     m = values.shape[1] # Columns
     n = values.shape[0] # Rows
     
@@ -599,12 +436,11 @@ def kmeans_scratch(k, ds):
     
     it = 0 #number of iterations
 
-    # Loop that will stop if the centroids won't change or the iterations will be at maximum equal to n (number of observation)
-    while it != 2 or np.array_equal(centroids, prior_cr) == False:
-        
-        
+    # Loop that will stop if the centroids won't change or the iterations will be at maximum equal to 10 
+    while it != 10 or np.array_equal(centroids, prior_cr) == False:
+    
         prior_cr = centroids # Centroids for the next iteration
-        d = np.zeros((n,k)) # Cuclidean distance matrix
+        d = np.zeros((n,k)) # Euclidean distance matrix
         cs = defaultdict(list) # Clusters collected into a dict    
         clusters = [] # Identified cluster 
         
@@ -612,7 +448,7 @@ def kmeans_scratch(k, ds):
         for i in range(n):
             for j in range(k):
                 d[i][j] += linalg.norm(values[i]-centroids[j])
-            
+
             ''' Assign to each element of the dataset a cluster such that its distance from 
             that cluster is minimized. '''
             clusters.append(np.where(d[i] == min(d[i]))[0][0]+1)
@@ -620,110 +456,405 @@ def kmeans_scratch(k, ds):
             # Dictionary that maps each cluster to the observations that belong to it
             cs[clusters[i]].append(i)
         
-        for k in range(k):
+        for a in range(k):
             for j in range(m):
                 my_values = []
-                for i in cs[k+1]: # Clusters' labels are 1, 2, ..., K
+                for i in cs[a+1]: # Clusters' labels are 1, 2, ..., K
                     # Take the values of the observation belonging to the i-th cluster
                     my_values.append(values[i][j])
                 # New centroids for each cluster 
-                centroids[k][j] = np.mean(my_values)
-        
+                centroids[a][j] = np.mean(my_values)
         it += 1
-        
     return clusters, d, cs
 
 def Elbow_scratch(data, K):
+
+  ''' This function returns a plot with a curve that describes how the 
+  withness-variance vary with different number of cluster. 
+  It is needed to decide the better number of cluster with the elbow method. '''
+
   distortions = []
-  for k in tqdm(K):
-      _, distance_matrix, _ = kmeans_scratch(k, data)
+  for n_cluster in tqdm(K):
+
+      # Take the distance matrix from kmeans function
+      clusters, distance_matrix, cs = kmeans_scratch(n_cluster, data)
+
+      # compute the squeared-sum of distances of each data-point from the correspondent centroid 
       distortions.append((sum(distance_matrix.min(axis=1)))**2)
-  plt.figure(figsize=(16,8))
+  
+  # plot the curve
+  plt.figure(figsize=(12,5))
   plt.xlabel("Numbers of clusters")
   plt.ylabel("Distortions")
-  plt.plot(K,distortions, 'bx-')
+  plt.title('Elbow Curve')
+  plt.plot(K,distortions,  linestyle='-', marker='o', color='tomato', lw = 3, alpha = .7, markersize = 8 )
   plt.show()  
 
-# Create new random reference set
 def gap_stat(data, k):
+
+    ''' This function returns a plot with a curve that describes how the 
+    gap-statistic vary with different number of cluster. 
+    It can be used to decide the better number of cluster. '''
+
+
+    # Compute a matrix of Uniform data samples of the same shape of our input data
     randomReference = np.random.random_sample(size=data.shape)
     cost_r = []
     gaps = []
-    sd_k = [] 
-    for i in tqdm(range(2,k)):
-        _,distance_matrix_random, clus_random = kmeans_scratch(i, randomReference)
-        _,distance_matrix, clus = kmeans_scratch(i, data)
-        costo = sum(distance_matrix.min(axis=1)**2)
-        costr = sum(distance_matrix_random.min(axis=1)**2)
-        cost_r.append(costr)
+    s_k = [] 
+    for n_cluster in tqdm(range(2,k)):
+        # compute k-means and get only the distance metrix and the disctionary 
+        _, distance_matrix_random, _ = kmeans_scratch(n_cluster, randomReference) # for the random data-matrix
+        _, distance_matrix, _ = kmeans_scratch(n_cluster, data)                          # for our data
+        
+        # compute the squeared-sum of distances of each data-point from the correspondent centroid 
+        costo = sum(distance_matrix.min(axis=1)**2)         # for the random data-matrix
+        costr = sum(distance_matrix_random.min(axis=1)**2)  # for our data
+        
+        cost_r.append(costr) 
+
+        # compute the gap statistic
         gap = np.log(np.mean(cost_r)) - np.log(costo)
+
+        # keep the value of gap statistic for each value of k
         gaps.append(gap)
-        sd_k.append(np.std(np.log(np.mean(cost_r))))
-    plt.figure(figsize=(16,8))
-    plt.plot(list(range(2,k)), gaps, linestyle='-', marker='x', color='blue')
-    plt.title("Gap statistics")
-    plt.xlabel("K")
+
+        # compute the standard deviation (of the random part)
+        s_k.append(np.std(np.log(np.mean(cost_r)))*np.sqrt(1+(1/len(cost_r))))
+    
+    # plot the curve
+    plt.figure(figsize=(12,5))
+    plt.plot(list(range(2,k)), gaps, linestyle='-', marker='o', color='lightseagreen', lw = 3, alpha = .7, markersize = 6)
+    plt.xlabel("Numbers of clusters")
     plt.ylabel("Gap Stistics")
+    plt.title('Gap Stistic Curve')
+    
+    # Get the better value of k according to gap statistics
+    # By definition k_star is the min {k | G[k] >= G[k+1] - s_k[k+1]
+    k_ = []
+    for z in range(0, k-3):
+      if (gaps[z] >= gaps[z+1] - s_k[z+1]):
+        k_.append(z)
+    k_star = min(k_)
+    plt.plot(k_star+2, gaps[k_star],  marker='o',markerfacecolor="darkcyan", markersize = 10)
     plt.show()
-    k_star = []
-    for j in range(0, k-3):
-      if (gaps[j] >= gaps[j+1] - sd_k[j+1]):
-        k_star.append(j)
-    return(min(k_star))
+    return(k_star+2)
 
-def cluster_handle_scratch():
-    merged_df = pca_all()
-    data = remove_object_col(merged_df)
+def Pivot(echonest, tracks, merged_df, clusters):
+  pivot = pd.DataFrame() #create a new dataFrame
+  a = []
+  #
+  for i in range(1,5):
+      pivot.insert(i-1, echonest.columns[i], pd.cut(echonest[echonest.columns[i]], bins = 4,labels=["1", "2", "3","4"])) # pd.cut() function is used to separate the array elements into different bins
+      #pd.cut will choose the bins to be evenly spaced according to the values themselves
+  pivot["track_genre_top"] = tracks.track_genre_top	
+  pivot.insert(0,"track_duration", pd.qcut(merged_df[merged_df.columns[7]], q = 4,labels=["1", "2", "3","4"])) #pd.qcut() tries to divide up the underlying data into equal sized bins.
+  
+  # aggregate categories of the feature track_language_code: we are going to have only four classes (english, french, spanish anh other)
+  for lang in range(len(tracks.track_language_code)):
+    if tracks.track_language_code[lang] not in ['en','es','fr','']:
+      tracks.track_language_code[lang] = 'oth'
+  
+  pivot["track_language"] = tracks.track_language_code
+  pivot.insert(0, "Clusters", clusters)
+  return pivot
 
-    clusters, distance_matrix, clus =  kmeans_scratch(12, data)
-    print(distance_matrix,clusters)
-    len(distance_matrix[0])
-    clus.keys()
-    Elbow_scratch(data, range(2,15))
-    k_star = gap_stat(data, 15)
-    print(k_star)
+def PivotDuration(pivot):
+    #duration
+    t = np.zeros((4,6))
+    l = []
+    for j in range(0,4):
+        for i in range(0,6):
+              # I subdivide the values of the pivot table by the number in the track_duration column and by the number of the cluster witch rappresent that value
+              t[j][i] = ((pivot[(pivot.track_duration == str(j+1)) & (pivot.Clusters == i+1)].count()[0]))
 
-def gap_stat_normal(data, k):
-    randomReference = np.random.random_sample(size=data.shape)
-    cost_r = []
-    gaps = []
-    sd_k = [] 
-    for i in tqdm(range(2,k)):
-        distance_matrix_random =  KMeans(n_clusters=k, init='k-means++').fit_transform(randomReference)
-        distance_matrix = KMeans(n_clusters=k, init='k-means++').fit_transform(data)
-        costo = sum(distance_matrix.min(axis=1)**2)
-        costr = sum(distance_matrix_random.min(axis=1)**2)
-        cost_r.append(costr)
-        gap = np.log(np.mean(cost_r)) - np.log(costo)
-        gaps.append(gap)
-        sd_k.append(np.std(np.log(np.mean(cost_r))))
-    plt.figure(figsize=(16,8))
-    plt.plot(list(range(2,k)), gaps, linestyle='-', marker='x', color='blue')
-    plt.title("Gap statistics")
-    plt.xlabel("K")
-    plt.ylabel("Gap Stistics")
-    plt.show()
-    k_star = []
-    for j in range(0, k-3):
-      if (gaps[j] >= gaps[j+1] - sd_k[j+1]):
-        k_star.append(j)
-    return(min(k_star))
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2) #I transform values into percentages
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    track_duration_pivot = pd.DataFrame(t)
+    track_duration_pivot.columns = l
+    track_duration_pivot.loc[4] = sum(t)
+    track_duration_pivot = track_duration_pivot.rename(index={0: 'Low',1: 'Medium-Low',2: 'Medium-High', 3: 'High',4: 'Tot'})
+  
 
-def cluster_handle_lib():
-    merged_df = pca_all()
-    data = remove_object_col(merged_df)
+    return track_duration_pivot 
 
-    kmeans = KMeans(n_clusters=12, init='k-means++').fit(data)
-    kmeans.cluster_centers_
+def pivotAcousticness(pivot):
+   #acousticness
+    t = np.zeros((4,6))
+    l = []
+    for j in range(0,4):
+        for i in range(0,6):
+               # I subdivide the values of the pivot table by the number in the audio_features_acousticness column and by the number of the cluster witch rappresent that value
+              t[j][i] = ((pivot[(pivot.audio_features_acousticness == str(j+1)) & (pivot.Clusters == i+1)].count()[0]))
 
-    # Instantiate the clustering model and visualizer
-    visualizer = KElbowVisualizer(KMeans(n_clusters=12, init='k-means++').fit(data), k=(2,15))
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    audio_features_acousticness_pivot = pd.DataFrame(t)
+    audio_features_acousticness_pivot.columns = l
+    audio_features_acousticness_pivot.loc[4] = sum(t)
+    audio_features_acousticness_pivot = audio_features_acousticness_pivot.rename(index={0: 'Low',1: 'Medium-Low',2: 'Medium-High', 3: 'High',4: 'Tot'})
 
-    visualizer.fit(data)        # Fit the data to the visualizer
-    visualizer.show()
 
-    gap_stat_normal(data,15)
+    return audio_features_acousticness_pivot 
 
-def handle_q_2():
-    cluster_handle_scratch()
-    cluster_handle_lib()
+def pivotDanceability(pivot):
+   #danceability
+    t = np.zeros((4,6))
+    l = []
+    for j in range(0,4):
+        for i in range(0,6):
+              # I subdivide the values of the pivot table by the number in the audio_features_danceability column and by the number of the cluster witch rappresent that value
+              t[j][i] = ((pivot[(pivot.audio_features_danceability == str(j+1)) & (pivot.Clusters == i+1)].count()[0]))
+
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    audio_features_danceability_pivot = pd.DataFrame(t)
+    audio_features_danceability_pivot.columns = l
+    audio_features_danceability_pivot.loc[4] = sum(t)
+    audio_features_danceability_pivot = audio_features_danceability_pivot.rename(index={0: 'Low',1: 'Medium-Low',2: 'Medium-High', 3: 'High',4: 'Tot'})
+ 
+
+    return audio_features_danceability_pivot  
+
+def pivotEnergy(pivot):
+   #energy 
+    t = np.zeros((4,6))
+    l = []
+    for j in range(0,4):
+        for i in range(0,6):
+              # I subdivide the values of the pivot table by the number in the audio_features_energy column and by the number of the cluster witch rappresent that value
+              t[j][i] = ((pivot[(pivot.audio_features_energy == str(j+1)) & (pivot.Clusters == i+1)].count()[0]))
+
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    audio_features_energy_pivot = pd.DataFrame(t)
+    audio_features_energy_pivot.columns = l
+    audio_features_energy_pivot.loc[4] = sum(t)
+    audio_features_energy_pivot = audio_features_energy_pivot.rename(index={0: 'Low',1: 'Medium-Low',2: 'Medium-High', 3: 'High',4: 'Tot'})
+
+
+    return audio_features_energy_pivot  
+
+def pivotInstrumentalness (pivot):
+   #instrumentalness
+    t = np.zeros((4,6))
+    l = []
+    for j in range(0,4):
+        for i in range(0,6):
+              # I subdivide the values of the pivot table by the number in the audio_features_instrumentalness column and by the number of the cluster witch rappresent that value
+              t[j][i] = ((pivot[(pivot.audio_features_instrumentalness == str(j+1)) & (pivot.Clusters == i+1)].count()[0]))
+
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    audio_features_instrumentalness_pivot = pd.DataFrame(t)
+    audio_features_instrumentalness_pivot.columns = l
+    audio_features_instrumentalness_pivot.loc[4] = sum(t)
+    audio_features_instrumentalness_pivot = audio_features_instrumentalness_pivot.rename(index={0: 'Low',1: 'Medium-Low',2: 'Medium-High', 3: 'High',4: 'Tot'})
+
+    return audio_features_instrumentalness_pivot
+
+def pivotLanguage(pivot):
+    #language
+    t = np.zeros((len(pivot.track_language.unique()),6))
+    l = []
+    c = 0 
+
+    for j in pivot.track_language.unique():
+        for i in range(0,6):
+          t[c][i] = ((pivot[(pivot.track_language == j) & (pivot.Clusters == i+1)].count()[0]))
+        c += 1
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    track_language_pivot = pd.DataFrame(t[:4])
+    track_language_pivot.columns = l
+    
+    track_language_pivot.loc[len(pivot.track_language.unique())] = sum(t)
+ 
+    track_language_pivot = track_language_pivot.rename(index={0: 'English', 1: 'Spanish', 2: 'Other', 3: 'French', 5: 'Total'})
+
+    return track_language_pivot
+
+def pivotGenre(pivot):
+    #genre
+    t = np.zeros((len(pivot.track_genre_top.unique()),6))
+    l = []
+    c = 0 
+    for j in pivot.track_genre_top.unique():
+        for i in range(0,6):
+            t[c][i] = ((pivot[(pivot.track_genre_top == j) & (pivot.Clusters == i+1)].count()[0]))
+        c += 1
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+
+    track_genre_top_pivot = pd.DataFrame(t)
+    track_genre_top_pivot = track_genre_top_pivot.drop(2)
+    track_genre_top_pivot.columns = l
+    track_genre_top_pivot.loc[len(pivot.track_genre_top.unique())+1] = sum(t)
+    track_genre_top_pivot = track_genre_top_pivot.rename(index={0: 'Hip-Hop', 1: 'Pop', 3:'Rock', 4: 'Experimental', 5: 'Folk', 
+                                                                6:'Jazz',7: 'Electronic', 8:'Spoken',9:'International', 10:'Soul-RnB',
+                                                               11: 'BluesCountry', 12:'Classical', 13: 'Old-Time / Historic', 
+                                                                14:'Instrumental', 15:'Easy', 16: 'Listening', 18: 'Tot'})
+
+
+    return track_genre_top_pivot
+
+def SpecialPivot(dataTracksFeatures, cluster):
+  pivot = pd.DataFrame()
+  a = []
+  pivot["track_genre_top_x"] = dataTracksFeatures.track_genre_top_x
+  pivot.insert(0,"track_duration_x", pd.qcut(dataTracksFeatures[dataTracksFeatures.columns[5]], q = 3,labels=["1", "2", "3"]))
+  pivot.insert(0, 'track_bit_rate', pd.qcut(dataTracksFeatures[dataTracksFeatures.columns[559]], q = 3,labels=["1", "2", "3"]))
+  pivot["track_language_code_y"] = dataTracksFeatures.track_language_code_y
+  pivot["track_location_x"] =  dataTracksFeatures.artist_location_x
+  pivot.insert(0, "Clusters", cluster)
+  return pivot
+
+def SPecialPivotBitrate(pivot):
+   #instrumentalness
+    t = np.zeros((4,6))
+    l = []
+    for j in range(0,4):
+        for i in range(0,6):
+              # I subdivide the values of the pivot table by the number in the audio_features_instrumentalness column and by the number of the cluster witch rappresent that value
+              t[j][i] = ((pivot[(pivot.track_bit_rate == str(j+1)) & (pivot.Clusters == i+1)].count()[0]))
+
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    special_bitrate = pd.DataFrame(t)
+    special_bitrate.columns = l
+    special_bitrate.loc[4] = sum(t)
+    special_bitrate = special_bitrate.rename(index={0: 'Low',1: 'Medium-Low',2: 'Medium-High', 3: 'High',4: 'Tot'})
+
+    return special_bitrate
+
+def SPecialPivotDuration(pivot):
+   #instrumentalness
+    t = np.zeros((4,6))
+    l = []
+    for j in range(0,4):
+        for i in range(0,6):
+              # I subdivide the values of the pivot table by the number in the audio_features_instrumentalness column and by the number of the cluster witch rappresent that value
+              t[j][i] = ((pivot[(pivot.track_duration_x == str(j+1)) & (pivot.Clusters == i+1)].count()[0]))
+
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    special_duration = pd.DataFrame(t)
+    special_duration.columns = l
+    special_duration.loc[4] = sum(t)
+    special_duration = special_duration.rename(index={0: 'Low',1: 'Medium-Low',2: 'Medium-High', 3: 'High',4: 'Tot'})
+
+    return special_duration
+
+def SpecialPivotGenre(pivot):
+    #genre
+    t = np.zeros((len(pivot.track_genre_top_x.unique()),6))
+    l = []
+    c = 0 
+    for j in pivot.track_genre_top.unique():
+        for i in range(0,6):
+            t[c][i] = ((pivot[(pivot.track_genre_top_x	 == j) & (pivot.Clusters == i+1)].count()[0]))
+        c += 1
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+
+    track_genre_top_pivot = pd.DataFrame(t)
+    track_genre_top_pivot = track_genre_top_pivot.drop(2)
+    track_genre_top_pivot.columns = l
+    track_genre_top_pivot.loc[len(pivot.track_genre_top.unique())+1] = sum(t)
+    track_genre_top_pivot = track_genre_top_pivot.rename(index={0: 'Hip-Hop', 1: 'Pop', 3:'Rock', 4: 'Experimental', 5: 'Folk', 
+                                                                6:'Jazz',7: 'Electronic', 8:'Spoken',9:'International', 10:'Soul-RnB',
+                                                               11: 'BluesCountry', 12:'Classical', 13: 'Old-Time / Historic', 
+                                                                14:'Instrumental', 15:'Easy', 16: 'Listening', 18: 'Tot'})
+
+
+    return track_genre_top_pivot
+
+def SpecialPivotLanguage(pivot):
+    #language
+    t = np.zeros((len(pivot.track_language_code_y.unique()),6))
+    l = []
+    c = 0 
+
+    for j in pivot.track_language_code_y.unique():
+        for i in range(0,6):
+          t[c][i] = ((pivot[(pivot.track_language_code_y == j) & (pivot.Clusters == i+1)].count()[0]))
+        c += 1
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    track_language_pivot = pd.DataFrame(t[:4])
+    track_language_pivot.columns = l
+    
+    track_language_pivot.loc[len(pivot.track_language_code_y.unique())] = sum(t)
+ 
+    track_language_pivot = track_language_pivot.rename(index={0: 'English', 1: 'Spanish', 2: 'Other', 3: 'French', 5: 'Total'})
+
+    return track_language_pivot
+
+def SpecialPivotLocation(pivot):
+    #language
+    t = np.zeros((len(pivot.track_location_x.unique()),6))
+    l = []
+    c = 0 
+
+    for j in pivot.track_location_x.unique():
+        for i in range(0,6):
+          t[c][i] = ((pivot[(pivot.track_location_x == j) & (pivot.Clusters == i+1)].count()[0]))
+        c += 1
+    for i in range(t.shape[1]):
+        t[:,i] = np.around((t[:,i]/sum(t)[i])*100,2)
+    l = []
+    for i in range(1,7):
+        l.append("Cluster "+str(i))
+    location_special = pd.DataFrame(t[:4])
+    location_special.columns = l
+    
+    location_special.loc[len(pivot.track_location_x.unique())] = sum(t)
+ 
+    location_special = location_special.rename(index={0: 'Brooklyn, NY', 1: 'France', 2: 'Other', 3: 'New York, NY', 5: 'Total'})
+
+    return location_special
+
+############### QUESTION 3 ###############
+
+def find_values_equal_s(A, s):
+  myPairs = []
+  for pair in itertools.combinations(A,2): # make all possibile combination
+    if (not pair in myPairs) and (not tuple(reversed(pair)) in myPairs) and (s == pair[0] + pair[1]): #check if (x,y) and (y,x) are not on my list
+      myPairs.append(pair)
+  if len(myPairs) > 0:
+      print(myPairs)
+  else:
+      print("There isn't any pairs whose sum is equal to", s)
